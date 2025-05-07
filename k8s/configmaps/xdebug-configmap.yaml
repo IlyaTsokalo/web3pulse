@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: xdebug-ini
+  namespace: web3pulse
+data:
+  xdebug.ini: |
+    xdebug.mode=debug
+    xdebug.start_with_request=yes
+    xdebug.client_host=host.docker.internal
+    xdebug.client_port=9003
+    xdebug.log=/tmp/xdebug.log

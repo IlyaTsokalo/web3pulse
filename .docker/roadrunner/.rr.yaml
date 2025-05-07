@@ -1,0 +1,22 @@
+server:
+  # Tells RoadRunner how to start the PHP worker (our `worker.php` file)
+  command: "php /var/www/web3-pulse-app/worker.php"
+  relay: pipes  # Uses standard pipes to talk between RoadRunner and PHP
+
+http:
+  address: 0.0.0.0:8080  # Expose on port 8080 inside the container
+
+  middleware: [ "headers" ]  # Optional middleware to add headers
+  pool:
+    num_workers: 4         # Number of PHP workers to handle parallel requests
+    max_jobs: 64           # Max requests per worker before it's restarted (free memory)
+    allocate_timeout: 30s  # Grace periods
+    destroy_timeout: 30s
+
+headers:
+  response:
+    X-Powered-By: "RoadRunner"
+
+rpc:
+  listen: tcp://127.0.0.1:6001  # Allows introspection via RR CLI
+version: '3'

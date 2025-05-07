@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web3pulse-app
+  namespace: web3pulse
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web3pulse-app
+  template:
+    metadata:
+      labels:
+        app: web3pulse-app
+    spec:
+      containers:
+        - name: web3pulse-app
+          image: my-app-image:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: PHP_IDE_CONFIG
+              value: "serverName=web3pulse-server"
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: xdebug-ini
+              mountPath: /usr/local/etc/php/conf.d/xdebug.ini
+              subPath: xdebug.ini
+            - name: app-code
+              mountPath: /var/www/web3-pulse-app
+      volumes:
+        - name: xdebug-ini
+          configMap:
+            name: xdebug-ini
+            items:
+              - key: xdebug.ini
+                path: xdebug.ini
+        - name: app-code
+          hostPath:
+            path: /web3-pulse-app
+            type: Directory

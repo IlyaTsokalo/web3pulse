@@ -1,0 +1,37 @@
+# Dockerfile.dev
+FROM php:8.3-alpine
+
+WORKDIR /var/www/web3-pulse-app
+
+RUN apk add --no-cache \
+    bash \
+    curl \
+    git \
+    unzip \
+    libzip-dev \
+    libpq-dev \
+    icu-dev \
+    zlib-dev \
+    oniguruma-dev \
+    libxml2-dev \
+    autoconf \
+    gcc \
+    g++ \
+    make \
+    pcre-dev \
+    linux-headers \
+ && docker-php-ext-install pdo pdo_pgsql zip sockets intl pcntl \
+ && pecl install xdebug && docker-php-ext-enable xdebug
+
+# Install PostgreSQL client tools for K8s jobs and test DB setup
+RUN apk add --no-cache postgresql-client
+
+# Copy Composer from official image and install dependencies (including dev)
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+COPY . .
+RUN composer install --no-interaction --prefer-dist
+
+# Get RoadRunner binary
+COPY --from=ghcr.io/roadrunner-server/roadrunner:2024.1.0 /usr/bin/rr /usr/local/bin/rr
+
+CMD ["rr", "serve", "-c", ".docker/roadrunner/.rr.yaml"]

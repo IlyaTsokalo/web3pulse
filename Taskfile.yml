@@ -1,0 +1,149 @@
+version: '3'
+
+tasks:
+  k8s:setup:
+    desc: "Setup Kubernetes environment from scratch"
+    cmds:
+      - task: k8s:clean
+      - task: k8s:build-image
+      - task: k8s:create-namespace
+      - task: k8s:minikube-mount
+      - task: k8s:apply-all
+      - task: k8s:wait-for-postgres
+      - echo "Kubernetes setup complete!"
+
+  k8s:clean:
+    desc: "Clean up any existing Kubernetes resources"
+    cmds:
+      - kubectl delete namespace web3pulse --ignore-not-found
+      - echo "Cleaned up existing resources"
+
+  k8s:build-image:
+    desc: "Build Docker image for the application"
+    cmds:
+      - docker build -t my-app-image:latest -f .docker/php/Dockerfile.dev .
+      - echo "Docker image built successfully"
+
+  k8s:create-namespace:
+    desc: "Create Kubernetes namespace"
+    cmds:
+      - kubectl apply -f k8s/namespace.yaml
+      - kubectl config set-context --current --namespace=web3pulse
+      - echo "Namespace created and set as default"
+
+  k8s:minikube-mount:
+    desc: "Mount local project directory into Minikube VM"
+    cmds:
+      - |
+        # Start the mount in the background and redirect output
+        nohup minikube mount $(pwd):/web3-pulse-app > minikube-mount.log 2>&1 &
+        # Wait a moment for mount to initialize
+        sleep 5
+        echo "Minikube mount started in background (see minikube-mount.log for details)"
+
+  k8s:apply-all:
+    desc: "Apply all Kubernetes configurations"
+    cmds:
+      - kubectl apply -R -f k8s/
+      - echo "Applied all Kubernetes configurations"
+
+  k8s:wait-for-postgres:
+    desc: "Wait for PostgreSQL to be ready"
+    cmds:
+      - |
+        echo "Waiting for PostgreSQL pod to be ready..."
+        # Wait for PostgreSQL pod to be running
+        kubectl wait --for=condition=ready pod -l app=postgres-db --timeout=300s
+        
+        # Get the DB pod
+        DB_POD=$(kubectl get pods -l app=postgres-db -o jsonpath="{.items[0].metadata.name}")
+        if [ -z "$DB_POD" ]; then
+          echo "Error: No database pod found"
+          exit 1
+        fi
+        
+        # Wait for PostgreSQL to be ready inside the pod
+        echo "Waiting for PostgreSQL service to be fully initialized..."
+        MAX_RETRIES=30
+        RETRY_COUNT=0
+        SLEEP_TIME=5
+        
+        while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+          if kubectl exec $DB_POD -- pg_isready -U symfony > /dev/null 2>&1; then
+            echo "PostgreSQL is ready!"
+            break
+          else
+            echo "PostgreSQL not ready yet, waiting..."
+            RETRY_COUNT=$((RETRY_COUNT+1))
+            sleep $SLEEP_TIME
+          fi
+        done
+        
+        if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+          echo "Error: PostgreSQL did not become ready within the timeout period"
+          exit 1
+        fi
+
+  k8s:init-test-db:
+    desc: "Initialize the test database"
+    cmds:
+      - task: k8s:wait-for-postgres
+      - |
+        # Get the DB pod
+        DB_POD=$(kubectl get pods -l app=postgres-db -o jsonpath="{.items[0].metadata.name}")
+        if [ -z "$DB_POD" ]; then
+          echo "Error: No database pod found"
+          exit 1
+        fi
+        echo "Creating test database in pod $DB_POD if it doesn't exist"
+        
+        # Check if symfony_test exists - separate the check from creation
+        TEST_DB_EXISTS=$(kubectl exec $DB_POD -- psql -U symfony -tAc "SELECT 1 FROM pg_database WHERE datname = 'symfony_test'")
+        
+        # Create the database if it doesn't exist
+        if [ -z "$TEST_DB_EXISTS" ]; then
+          echo "Test database does not exist, creating..."
+          kubectl exec $DB_POD -- psql -U symfony -c "CREATE DATABASE symfony_test WITH OWNER symfony;"
+        else
+          echo "Test database already exists"
+        fi
+        
+        # Get the app pod
+        APP_POD=$(kubectl get pods -l app=web3pulse-app -o jsonpath="{.items[0].metadata.name}")
+        if [ -z "$APP_POD" ]; then
+          echo "Error: No app pod found"
+          exit 1
+        fi
+        echo "Running database migrations for test environment"
+        kubectl exec $APP_POD -- php bin/console doctrine:schema:drop --env=test --force
+        kubectl exec $APP_POD -- php bin/console doctrine:schema:create --env=test
+
+  k8s:run-tests:
+    desc: "Run tests inside the Kubernetes container"
+    cmds:
+      - task: k8s:init-test-db
+      - |
+        APP_POD=$(kubectl get pods -l app=web3pulse-app -o jsonpath="{.items[0].metadata.name}")
+        if [ -z "$APP_POD" ]; then
+          echo "Error: No app pod found"
+          exit 1
+        fi
+        echo "Running tests in pod $APP_POD"
+        kubectl exec $APP_POD -- bin/phpunit
+
+  k8s:shell:
+    desc: "Open a shell in the app container"
+    cmds:
+      - |
+        APP_POD=$(kubectl get pods -l app=web3pulse-app -o jsonpath="{.items[0].metadata.name}")
+        if [ -z "$APP_POD" ]; then
+          echo "Error: No app pod found"
+          exit 1
+        fi
+        kubectl exec -it $APP_POD -- /bin/bash
+
+  code-style-fix:
+    desc: "Run php-cs-fixer and Rector on src/"
+    cmds:
+      - vendor/bin/php-cs-fixer fix src
+      - vendor/bin/rector process src

@@ -1,0 +1,12 @@
+parameters:
+    level: 3
+    paths:
+        - src
+    ignoreErrors:
+        - '#Instanceof between .+ will always evaluate to true#'
+        - '#Method .+ should return static\(.+\) but returns#'
+        - '#Cannot access property .+ on array#'
+        - '#Strict comparison using === between null and null will always evaluate to true#'
+        - '#Unreachable statement - code above always terminates#'
+        - '#Call to an undefined method#'
+        - '#PHPDoc tag @throws with type .+ is not subtype of Throwable#'

@@ -1,0 +1,116 @@
+name: Web3PulseApp CI
+
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ main, dev ]
+
+jobs:
+  code-quality:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo, pgsql, redis
+          coverage: xdebug
+          tools: composer:v2, php-cs-fixer
+
+      - name: Get composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v3
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Create basic .env file
+        run: |
+          echo "APP_ENV=test" > .env
+          echo "APP_SECRET=test_secret" >> .env
+          echo "DATABASE_URL=postgresql://symfony:symfony@localhost:5432/symfony_test" >> .env
+          echo "REDIS_URL=redis://localhost:6379" >> .env
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-interaction --no-scripts
+
+      - name: Check code style
+        run: vendor/bin/php-cs-fixer fix --dry-run --diff src/
+
+      - name: PHPStan static analysis
+        run: vendor/bin/phpstan analyse src/ --level=5
+
+  tests:
+    name: Application Tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_USER: symfony
+          POSTGRES_PASSWORD: symfony
+          POSTGRES_DB: symfony
+        ports:
+          - 5432:5432
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo, pgsql, redis
+          coverage: xdebug
+          tools: composer:v2
+
+      - name: Get composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v3
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Create basic .env file
+        run: |
+          echo "APP_ENV=test" > .env
+          echo "APP_SECRET=test_secret" >> .env
+          echo "DATABASE_URL=postgresql://symfony:symfony@localhost:5432/symfony_test" >> .env
+          echo "REDIS_URL=redis://localhost:6379" >> .env
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-interaction --no-scripts
+
+      - name: Create test database
+        run: |
+          php bin/console doctrine:database:create --env=test --if-not-exists
+          php bin/console doctrine:schema:create --env=test
+        env:
+          DATABASE_URL: postgresql://symfony:symfony@localhost:5432/symfony_test
+
+      - name: Run unit and functional tests
+        run: vendor/bin/phpunit
+        env:
+          DATABASE_URL: postgresql://symfony:symfony@localhost:5432/symfony_test
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379

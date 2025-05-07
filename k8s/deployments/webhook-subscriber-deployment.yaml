@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webhook-subscriber
+  namespace: web3pulse
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: webhook-subscriber
+  template:
+    metadata:
+      labels:
+        app: webhook-subscriber
+    spec:
+      containers:
+        - name: webhook-subscriber
+          image: my-app-image:latest
+          imagePullPolicy: IfNotPresent
+          command: ["php", "bin/console", "app:webhook:subscribe"]
+          env:
+            - name: REDIS_URL
+              value: "redis://redis-service:6379"
+          volumeMounts:
+            - name: app-code
+              mountPath: /var/www/web3-pulse-app
+      volumes:
+        - name: app-code
+          hostPath:
+            path: /web3-pulse-app
+            type: Directory

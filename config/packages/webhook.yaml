@@ -1,0 +1,7 @@
+parameters:
+  webhook_channels:
+    - block.registered
+
+  webhook_map:
+    block.registered:
+      - 'https://some-subcriber.com/webhooks/block-registered'

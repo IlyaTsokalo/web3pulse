@@ -1,0 +1,45 @@
+# --- Stage 1: Builder ---
+FROM php:8.3-alpine AS builder
+
+WORKDIR /app
+
+RUN apk add --no-cache \
+    git \
+    unzip \
+    curl \
+    libzip-dev \
+    libpq-dev \
+    icu-dev \
+    zlib-dev \
+    oniguruma-dev \
+    libxml2-dev \
+    autoconf \
+    gcc \
+    g++ \
+    make \
+    pcre-dev \
+    linux-headers \
+ && docker-php-ext-install pdo pdo_pgsql zip sockets intl pcntl
+
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+COPY composer.json composer.lock ./
+RUN composer install --no-dev --optimize-autoloader --no-interaction
+COPY . .
+
+# --- Stage 2: Runtime ---
+FROM php:8.3-alpine AS runtime
+
+WORKDIR /var/www/web3-pulse-app
+
+RUN apk add --no-cache \
+    libzip-dev \
+    libpq-dev \
+    icu-dev \
+    zlib-dev \
+    oniguruma-dev \
+ && docker-php-ext-install pdo pdo_pgsql zip sockets intl pcntl
+
+COPY --from=builder /app /var/www/web3-pulse-app
+COPY --from=ghcr.io/roadrunner-server/roadrunner:2024.1.0 /usr/bin/rr /usr/local/bin/rr
+
+CMD ["rr", "serve", "-c", ".rr.yaml"]
